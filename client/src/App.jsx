@@ -46,7 +46,7 @@ export default function App() {
 
   return (
     <main>
-      <h1>Todos</h1>
+      <h1>Basic deployed site</h1>
       <form onSubmit={add}>
         <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="What needs doing?" aria-label="New todo" />
         <button type="submit">Add todo</button>
