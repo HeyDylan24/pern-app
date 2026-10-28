@@ -1,30 +1,41 @@
-# PERN starter
+# Terra Smart Irrigation Simulation
 
-PostgreSQL + Express + React (Vite) + Node. Includes a working todos CRUD example.
+A React dashboard for the project's four-zone soil simulation. The Express API runs
+the Python simulation and trained random-forest model, then returns zone and daily
+summaries to the browser.
 
-## Setup
-1. Install Node 20.6+ and PostgreSQL, then create a database:
-   `createdb pern_app` (or create it in pgAdmin).
-2. Configure the server:
-   `cp server/.env.example server/.env` (Windows: `copy server\.env.example server\.env`)
-   and edit `DATABASE_URL` with your Postgres password.
-3. Install everything: `npm run install:all`
-4. Create the table: `npm run db:init`
-5. Start both apps: `npm run dev`
+## Run locally
 
-- Web: http://localhost:5173
-- API: http://localhost:5000/api/health
+Requirements: Node.js 20.6+ and Python 3.11+.
 
-## Layout
-- `server/` Express API (`routes/`, `db.js`, `schema.sql`)
-- `client/` React app; Vite proxies `/api` to the server
+From PowerShell:
 
-## Deploy (free): Neon + Render
-1. Create a Neon project and copy its connection string.
-2. Push this repo to GitHub.
-3. On Render, create a Web Service from the repo:
-   - Build command: `npm run build`
-   - Start command: `npm start`
-   - Environment variable: `DATABASE_URL` = your Neon connection string
-   - Instance type: Free
-The server serves the built React app and creates the table on first start.
+```powershell
+Set-Location "C:\path\to\pern-app"
+npm run install:all
+python -m pip install -r server\requirements.txt
+npm run dev
+```
+
+Open <http://localhost:5173>, choose a simulation length, and select **Run
+simulation**. The API is available at <http://localhost:5000/api/health>.
+
+The local simulation does not require Neon or a `DATABASE_URL`. Set
+`PYTHON_EXECUTABLE` if Python is not available as `python` on Windows or
+`python3` on Linux/macOS.
+
+## Simulation details
+
+- The dashboard calls `POST /api/simulation/run` with a duration from 1 to 30 days.
+- The API runs `server/irrigation/run_simulation.py` with the shared simulation
+  core and model bundled in `server/irrigation/`.
+- The default seed (2024) makes a run repeatable. A run simulates synthetic weather,
+  sensor noise, and four assumed soil types; it does not read live sensors or
+  control real valves.
+- Valve lockout, daily watering caps, sensor validation, and fail-closed behavior
+  are applied by the simulation. Soil and water-flow values are assumptions, not
+  field-validated agronomic advice.
+
+For deployment, install the Python packages in `server/requirements.txt` in the
+server environment and set `PYTHON_EXECUTABLE` if needed. The server serves the
+built React app from `client/dist`.

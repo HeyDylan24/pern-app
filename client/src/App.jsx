@@ -1,30 +1,20 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 
-async function api(path, options) {
-  const response = await fetch(`/api${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...options,
-  });
-
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.error || "Something went wrong. Please try again.");
-  }
-
-  return response.status === 204 ? null : response.json();
-}
+const ZONE_COLORS = ["#6d5ce8", "#e79a56", "#42a982", "#e06d83"];
 
 function Icon({ name, size = 18 }) {
   const paths = {
     check: <path d="m5 12 4 4L19 6" />,
-    plus: <path d="M12 5v14M5 12h14" />,
-    search: <><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>,
-    trash: <><path d="M3 6h18M8 6V4h8v2m3 0-1 14H6L5 6m4 4v6m6-6v6" /></>,
-    edit: <><path d="m15 5 4 4M4 20l4-.8L19 8a2.1 2.1 0 0 0-3-3L5 16z" /></>,
-    close: <path d="m18 6-12 12M6 6l12 12" />,
-    list: <><path d="M9 6h11M9 12h11M9 18h11" /><path d="M4 6h.01M4 12h.01M4 18h.01" /></>,
-    done: <><circle cx="12" cy="12" r="9" /><path d="m8 12 2.5 2.5L16 9" /></>,
+    play: <path d="m8 5 12 7-12 7z" />,
+    droplet: <><path d="M12 22a7 7 0 0 0 7-7c0-4-7-13-7-13S5 11 5 15a7 7 0 0 0 7 7Z" /><path d="M9 16a3 3 0 0 0 3 3" /></>,
     spark: <><path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3Z" /><path d="m19 14 1.1 2.9L23 18l-2.9 1.1L19 22l-1.1-2.9L15 18l2.9-1.1L19 14Z" /></>,
+    thermometer: <><path d="M14 14.76V5a3 3 0 0 0-6 0v9.76a5 5 0 1 0 6 0Z" /><path d="M11 11v6" /></>,
+    clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+    leaf: <><path d="M20 4c-9 0-15 4-15 11a5 5 0 0 0 5 5c7 0 11-6 10-16Z" /><path d="M5 20c2-5 6-8 12-11" /></>,
+    refresh: <><path d="M20 7v5h-5" /><path d="M4 17v-5h5" /><path d="M5.6 9A7 7 0 0 1 18 6l2 6M4 12l2 6a7 7 0 0 0 12.4-3" /></>,
+    info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5m0-8h.01" /></>,
+    chart: <><path d="M3 3v18h18" /><path d="m19 9-5 5-4-4-5 5" /></>,
+    shield: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></>,
   };
 
   return (
@@ -44,326 +34,267 @@ function Icon({ name, size = 18 }) {
   );
 }
 
-function formatDate(date) {
-  return new Intl.DateTimeFormat("en", {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  }).format(date);
+async function runSimulation(days) {
+  let response;
+  try {
+    response = await fetch("/api/simulation/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days, seed: 2024 }),
+    });
+  } catch {
+    throw new Error("Can't reach the simulation server. Start the app from the pern-app folder with npm run dev.");
+  }
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.error || "The simulation request failed.");
+  }
+  return result;
+}
+
+function MoistureChart({ daily }) {
+  const width = 720;
+  const height = 250;
+  const left = 43;
+  const right = 18;
+  const top = 18;
+  const bottom = 32;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const pointX = (index) => left + (daily.length <= 1 ? plotWidth / 2 : (index / (daily.length - 1)) * plotWidth);
+  const pointY = (value) => top + (1 - value / 60) * plotHeight;
+  const series = daily[0]?.zones.map((zone, zoneIndex) => ({
+    zone,
+    color: ZONE_COLORS[zoneIndex],
+    values: daily.map((day) => day.zones[zoneIndex].meanMoisturePct),
+  })) ?? [];
+  const dayTicks = [...new Set([0, Math.floor((daily.length - 1) / 2), daily.length - 1])];
+
+  return (
+    <div className="chart-wrap">
+      <svg className="moisture-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Average soil moisture by zone over the simulated days">
+        {[0, 20, 40, 60].map((value) => {
+          const y = pointY(value);
+          return (
+            <g key={value}>
+              <line x1={left} x2={width - right} y1={y} y2={y} className="chart-grid" />
+              <text x={left - 10} y={y + 4} className="chart-axis-label" textAnchor="end">{value}%</text>
+            </g>
+          );
+        })}
+        {series.map((item) => {
+          const points = item.values.map((value, index) => `${pointX(index)},${pointY(value)}`).join(" ");
+          return (
+            <g key={item.zone.zone}>
+              {item.values.length > 1 && <polyline points={points} fill="none" stroke={item.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />}
+              {item.values.map((value, index) => (
+                <circle key={`${item.zone.zone}-${index}`} cx={pointX(index)} cy={pointY(value)} r={daily.length === 1 ? 4 : 2.7} fill="#fff" stroke={item.color} strokeWidth="2" />
+              ))}
+            </g>
+          );
+        })}
+        {dayTicks.map((index) => (
+          <text key={index} x={pointX(index)} y={height - 7} className="chart-axis-label" textAnchor="middle">
+            Day {daily[index].day}
+          </text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+function MetricCard({ icon, label, value, note, variant }) {
+  return (
+    <article className="metric-card">
+      <span className={`metric-icon ${variant}`}><Icon name={icon} size={19} /></span>
+      <span className="metric-label">{label}</span>
+      <strong className="metric-value">{value}</strong>
+      <span className="metric-note">{note}</span>
+    </article>
+  );
 }
 
 export default function App() {
-  const [todos, setTodos] = useState([]);
-  const [title, setTitle] = useState("");
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("all");
-  const [editingId, setEditingId] = useState(null);
-  const [editTitle, setEditTitle] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [days, setDays] = useState(7);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const loadTodos = async () => {
+  const startSimulation = async (event) => {
+    event.preventDefault();
     setLoading(true);
-    setLoadFailed(false);
     setError("");
     try {
-      setTodos(await api("/todos"));
-    } catch (requestError) {
-      setError(requestError.message);
-      setLoadFailed(true);
+      setResult(await runSimulation(days));
+    } catch (simulationError) {
+      setError(simulationError.message);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    loadTodos();
-  }, []);
-
-  const completedCount = todos.filter((todo) => todo.done).length;
-  const openCount = todos.length - completedCount;
-  const completion = todos.length ? Math.round((completedCount / todos.length) * 100) : 0;
-  const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 18 ? "Good afternoon" : "Good evening";
-
-  const visibleTodos = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return todos.filter((todo) => {
-      const matchesFilter = filter === "all" || (filter === "open" ? !todo.done : todo.done);
-      return matchesFilter && todo.title.toLowerCase().includes(query);
-    });
-  }, [todos, filter, search]);
-
-  const addTodo = async (event) => {
-    event.preventDefault();
-    const cleanTitle = title.trim();
-    if (!cleanTitle || saving) return;
-
-    setSaving(true);
-    setError("");
-    try {
-      const todo = await api("/todos", {
-        method: "POST",
-        body: JSON.stringify({ title: cleanTitle }),
-      });
-      setTodos((current) => [todo, ...current]);
-      setTitle("");
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const toggleTodo = async (todo) => {
-    setError("");
-    try {
-      const updated = await api(`/todos/${todo.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ done: !todo.done }),
-      });
-      setTodos((current) => current.map((item) => item.id === todo.id ? updated : item));
-    } catch (requestError) {
-      setError(requestError.message);
-    }
-  };
-
-  const deleteTodo = async (todo) => {
-    setError("");
-    try {
-      await api(`/todos/${todo.id}`, { method: "DELETE" });
-      setTodos((current) => current.filter((item) => item.id !== todo.id));
-      if (editingId === todo.id) setEditingId(null);
-    } catch (requestError) {
-      setError(requestError.message);
-    }
-  };
-
-  const saveEdit = async (event, todo) => {
-    event.preventDefault();
-    const cleanTitle = editTitle.trim();
-    if (!cleanTitle) {
-      setError("A task needs a title.");
-      return;
-    }
-
-    setError("");
-    try {
-      const updated = await api(`/todos/${todo.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ title: cleanTitle }),
-      });
-      setTodos((current) => current.map((item) => item.id === todo.id ? updated : item));
-      setEditingId(null);
-    } catch (requestError) {
-      setError(requestError.message);
-    }
-  };
-
-  const filters = [
-    { id: "all", label: "All tasks", count: todos.length },
-    { id: "open", label: "In progress", count: openCount },
-    { id: "done", label: "Completed", count: completedCount },
-  ];
+  const summary = result?.summary;
 
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="/" aria-label="Daymark home">
-          <span className="brand-mark"><Icon name="check" size={19} /></span>
-          <span>daymark<span className="brand-period">.</span></span>
+        <a className="brand" href="/" aria-label="Terra home">
+          <span className="brand-mark"><Icon name="leaf" size={19} /></span>
+          <span>terra<span className="brand-period">.</span></span>
         </a>
 
-        <div className="workspace-label">WORKSPACE</div>
+        <p className="workspace-label">SMART IRRIGATION</p>
         <div className="workspace-card">
-          <span className="workspace-avatar">D</span>
-          <span className="workspace-copy"><strong>My workspace</strong><small>Personal space</small></span>
-          <span className="workspace-chevron" aria-hidden="true">⌄</span>
+          <span className="workspace-avatar"><Icon name="droplet" size={17} /></span>
+          <span className="workspace-copy"><strong>Field monitor</strong><small>Simulation workspace</small></span>
+          <span className="online-indicator" title="Local simulator ready" />
         </div>
 
-        <nav className="sidebar-nav" aria-label="Task views">
-          <p className="nav-heading">YOUR SPACE</p>
-          {filters.map((item) => (
-            <button
-              className={`nav-item ${filter === item.id ? "is-active" : ""}`}
-              key={item.id}
-              onClick={() => setFilter(item.id)}
-              aria-current={filter === item.id ? "page" : undefined}
-            >
-              <Icon name={item.id === "all" ? "list" : item.id === "done" ? "done" : "spark"} size={17} />
-              <span>{item.label}</span>
-              <span className="nav-count">{item.count}</span>
-            </button>
-          ))}
+        <nav className="sidebar-nav" aria-label="Main navigation">
+          <p className="nav-heading">TOOLS</p>
+          <a className="nav-item is-active" href="#simulation" aria-current="page">
+            <Icon name="chart" size={17} />
+            <span>Field simulation</span>
+          </a>
         </nav>
 
         <div className="sidebar-bottom">
           <div className="sidebar-note">
-            <span className="note-icon"><Icon name="spark" size={16} /></span>
-            <p><strong>Small steps add up.</strong><br />Keep your momentum going.</p>
+            <span className="note-icon"><Icon name="info" size={16} /></span>
+            <p><strong>A design simulation</strong><br />Not a field-tested irrigation forecast.</p>
           </div>
-          <div className="profile">
-            <span className="profile-avatar">D</span>
-            <span className="profile-copy"><strong>Dylan</strong><small>Personal account</small></span>
-            <span className="profile-menu" aria-hidden="true">···</span>
+          <div className="model-status">
+            <span className="model-status-dot" />
+            <span><strong>AI model</strong><small>Random forest · v2</small></span>
           </div>
         </div>
       </aside>
 
-      <main className="main-content">
+      <main className="main-content" id="simulation">
         <header className="topbar">
-          <div className="breadcrumb"><span>Workspace</span><span className="breadcrumb-divider">/</span><strong>My tasks</strong></div>
-          <div className="today-label"><span className="today-dot" /> Your personal task list</div>
+          <div className="breadcrumb"><span>Smart irrigation</span><span className="breadcrumb-divider">/</span><strong>Field simulation</strong></div>
+          <div className="today-label"><span className="today-dot" /> Model ready</div>
         </header>
 
         <div className="page-content">
           <section className="welcome">
             <div className="welcome-copy">
-              <p className="eyebrow">{formatDate(new Date()).toUpperCase()}</p>
-              <h1>{greeting}, Dylan<span className="wave">.</span></h1>
-              <p className="welcome-subtitle">A little progress each day adds up to big results.</p>
+              <p className="eyebrow">SIMULATION LAB <span className="eyebrow-divider">/</span> AI CONTROLLER</p>
+              <h1>Grow with confidence<span className="wave">.</span></h1>
+              <p className="welcome-subtitle">Explore soil moisture and irrigation decisions across four simulated soil zones.</p>
             </div>
             <div className="welcome-art" aria-hidden="true">
               <span className="art-sun" />
               <span className="art-hill art-hill-back" />
               <span className="art-hill art-hill-front" />
-              <span className="art-star art-star-one">✳</span>
-              <span className="art-star art-star-two">✦</span>
+              <span className="art-sprout">✳</span>
+              <span className="art-star">✦</span>
             </div>
           </section>
 
-          <section className="stats-grid" aria-label="Task summary">
-            <article className="stat-card">
-              <span className="stat-icon stat-icon-lavender"><Icon name="list" size={18} /></span>
-              <span className="stat-label">Total tasks</span>
-              <strong className="stat-value">{todos.length}</strong>
-              <span className="stat-caption">on your list</span>
-            </article>
-            <article className="stat-card">
-              <span className="stat-icon stat-icon-peach"><Icon name="spark" size={18} /></span>
-              <span className="stat-label">In progress</span>
-              <strong className="stat-value">{openCount}</strong>
-              <span className="stat-caption">ready when you are</span>
-            </article>
-            <article className="stat-card stat-card-progress">
-              <span className="stat-icon stat-icon-green"><Icon name="done" size={18} /></span>
-              <span className="stat-label">Completion</span>
-              <strong className="stat-value">{completion}<small>%</small></strong>
-              <span className="progress-track"><span className="progress-fill" style={{ width: `${completion}%` }} /></span>
-            </article>
-          </section>
-
-          <section className="task-panel" aria-labelledby="task-list-title">
-            <div className="panel-header">
+          <section className="simulation-controls" aria-labelledby="run-title">
+            <div className="control-copy">
+              <span className="control-icon"><Icon name="play" size={17} /></span>
               <div>
-                <p className="section-kicker">YOUR PLAN</p>
-                <h2 id="task-list-title">{filter === "done" ? "Completed tasks" : filter === "open" ? "In progress" : "All tasks"}<span className="task-total">{visibleTodos.length}</span></h2>
+                <h2 id="run-title">Run a field simulation</h2>
+                <p>Choose how many days to model. The same seed gives repeatable results.</p>
               </div>
-              <label className="search-field">
-                <Icon name="search" size={17} />
-                <input
-                  type="search"
-                  placeholder="Search tasks"
-                  aria-label="Search tasks"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                />
-                {search && <button className="clear-search" type="button" onClick={() => setSearch("")} aria-label="Clear search"><Icon name="close" size={14} /></button>}
-              </label>
             </div>
-
-            <form className="add-task-form" onSubmit={addTodo}>
-              <span className="add-task-icon"><Icon name="plus" size={18} /></span>
-              <input
-                type="text"
-                value={title}
-                onChange={(event) => setTitle(event.target.value)}
-                placeholder="Add a task to your list..."
-                aria-label="New task title"
-                maxLength={500}
-              />
-              <button className="add-task-button" type="submit" disabled={!title.trim() || saving}>
-                <Icon name="plus" size={16} />
-                <span>{saving ? "Adding..." : "Add task"}</span>
+            <form className="run-form" onSubmit={startSimulation}>
+              <label className="days-control">
+                <span>Simulation length</span>
+                <select value={days} onChange={(event) => setDays(Number(event.target.value))} disabled={loading}>
+                  {[1, 3, 7, 14, 30].map((option) => <option value={option} key={option}>{option} {option === 1 ? "day" : "days"}</option>)}
+                </select>
+              </label>
+              <button className="run-button" type="submit" disabled={loading}>
+                {loading ? <span className="button-spinner" /> : <Icon name="play" size={15} />}
+                <span>{loading ? "Simulating..." : "Run simulation"}</span>
               </button>
             </form>
-
-            {error && (
-              <div className="error-banner" role="alert">
-                <span>{error}</span>
-                <button type="button" onClick={() => setError("")} aria-label="Dismiss error"><Icon name="close" size={16} /></button>
-              </div>
-            )}
-
-            <div className="task-list" aria-live="polite">
-              {loading ? (
-                <div className="list-message"><span className="loading-spinner" /> Loading your tasks...</div>
-              ) : loadFailed ? (
-                <div className="empty-state">
-                  <span className="empty-icon"><Icon name="list" size={24} /></span>
-                  <h3>Tasks are unavailable</h3>
-                  <p>Check your connection, then try loading your list again.</p>
-                  <button type="button" className="text-button" onClick={loadTodos}>Try again</button>
-                </div>
-              ) : visibleTodos.length ? (
-                visibleTodos.map((todo) => (
-                  <article className={`task-row ${todo.done ? "task-row-done" : ""}`} key={todo.id}>
-                    <button
-                      type="button"
-                      className={`task-check ${todo.done ? "is-checked" : ""}`}
-                      onClick={() => toggleTodo(todo)}
-                      aria-label={todo.done ? `Mark ${todo.title} as in progress` : `Complete ${todo.title}`}
-                    >
-                      {todo.done && <Icon name="check" size={14} />}
-                    </button>
-                    {editingId === todo.id ? (
-                      <form className="edit-task-form" onSubmit={(event) => saveEdit(event, todo)}>
-                        <input
-                          autoFocus
-                          value={editTitle}
-                          onChange={(event) => setEditTitle(event.target.value)}
-                          aria-label="Edit task title"
-                        />
-                        <button type="submit" className="edit-save">Save</button>
-                        <button type="button" className="edit-cancel" onClick={() => setEditingId(null)}>Cancel</button>
-                      </form>
-                    ) : (
-                      <>
-                        <span className="task-title">{todo.title}</span>
-                        <span className={`task-status ${todo.done ? "status-done" : "status-open"}`}>{todo.done ? "Done" : "In progress"}</span>
-                        <div className="task-actions">
-                          <button
-                            type="button"
-                            className="icon-button"
-                            onClick={() => { setEditingId(todo.id); setEditTitle(todo.title); }}
-                            aria-label={`Edit ${todo.title}`}
-                          ><Icon name="edit" size={16} /></button>
-                          <button type="button" className="icon-button delete-button" onClick={() => deleteTodo(todo)} aria-label={`Delete ${todo.title}`}><Icon name="trash" size={16} /></button>
-                        </div>
-                      </>
-                    )}
-                  </article>
-                ))
-              ) : (
-                <div className="empty-state">
-                  <span className="empty-icon"><Icon name={search ? "search" : filter === "done" ? "done" : "spark"} size={24} /></span>
-                  <h3>{search ? "No matching tasks" : filter === "done" ? "Nothing completed yet" : "Your list is clear"}</h3>
-                  <p>{search ? "Try another search, or clear the search field." : filter === "done" ? "Completed tasks will show up here." : "Add a task above and take the first step."}</p>
-                  {search && <button type="button" className="text-button" onClick={() => setSearch("")}>Clear search</button>}
-                </div>
-              )}
-            </div>
-
-            {!loading && todos.length > 0 && (
-              <footer className="panel-footer">
-                <span>{openCount === 0 ? "Everything is wrapped up. Nice work!" : `${openCount} ${openCount === 1 ? "task" : "tasks"} left to do`}</span>
-                <span className="footer-motivation"><Icon name="spark" size={14} /> Keep going</span>
-              </footer>
-            )}
           </section>
 
-          <footer className="page-footer">Made for focused days <span>·</span> One task at a time</footer>
+          {error && <div className="error-banner" role="alert"><Icon name="info" size={17} /><span>{error}</span></div>}
+
+          {loading && !result && (
+            <div className="loading-panel" role="status">
+              <span className="loading-spinner" />
+              <div><strong>Growing your forecast...</strong><span>Running the AI controller against simulated weather.</span></div>
+            </div>
+          )}
+
+          {result && summary ? (
+            <>
+              <section className="metrics-grid" aria-label="Simulation summary">
+                <MetricCard icon="droplet" variant="metric-icon-blue" label="Water used" value={`${summary.waterLitres.toLocaleString()} L`} note={`Across ${result.days} simulated ${result.days === 1 ? "day" : "days"}`} />
+                <MetricCard icon="spark" variant="metric-icon-violet" label="Irrigation events" value={summary.irrigationEvents.toLocaleString()} note="Valve activations across zones" />
+                <MetricCard icon="thermometer" variant="metric-icon-green" label="Average soil moisture" value={`${summary.meanMoisturePct}%`} note="Mean of all simulated readings" />
+                <MetricCard icon="leaf" variant="metric-icon-peach" label="Comfort-range hours" value={`${summary.comfortHoursPct}%`} note={`${summary.stressHoursPct}% stress hours · below 20% moisture`} />
+              </section>
+
+              <section className="results-panel" aria-labelledby="moisture-title">
+                <div className="panel-header">
+                  <div>
+                    <p className="section-kicker">SOIL CONDITIONS</p>
+                    <h2 id="moisture-title">Moisture across the field</h2>
+                    <p className="panel-subtitle">Average soil moisture by zone through the simulation</p>
+                  </div>
+                  <span className="seed-chip"><Icon name="refresh" size={14} /> Repeatable · Seed {result.seed}</span>
+                </div>
+                <MoistureChart daily={result.daily} />
+                <div className="chart-legend">
+                  {result.zones.map((zone, index) => (
+                    <span className="legend-item" key={zone.zone}><i style={{ backgroundColor: ZONE_COLORS[index] }} />Zone {zone.zone} · {zone.soil}</span>
+                  ))}
+                </div>
+              </section>
+
+              <section className="zones-section" aria-labelledby="zones-title">
+                <div className="section-heading">
+                  <div>
+                    <p className="section-kicker">ZONE BREAKDOWN</p>
+                    <h2 id="zones-title">How each soil responded</h2>
+                  </div>
+                  <span className="model-badge"><Icon name="spark" size={14} /> {result.model}</span>
+                </div>
+                <div className="zones-grid">
+                  {result.zones.map((zone, index) => (
+                    <article className="zone-card" key={zone.zone}>
+                      <div className="zone-card-top">
+                        <span className="zone-marker" style={{ backgroundColor: ZONE_COLORS[index] }}>{zone.zone}</span>
+                        <span className="soil-tag">{zone.soil} soil</span>
+                      </div>
+                      <div className="zone-moisture">{zone.meanMoisturePct}<span>%</span></div>
+                      <div className="zone-moisture-label">average moisture</div>
+                      <div className="zone-meter" role="progressbar" aria-label={`Zone ${zone.zone} average moisture`} aria-valuenow={zone.meanMoisturePct} aria-valuemin={0} aria-valuemax={60}>
+                        <span style={{ width: `${Math.min(zone.meanMoisturePct / 60 * 100, 100)}%`, backgroundColor: ZONE_COLORS[index] }} />
+                      </div>
+                      <div className="zone-stats">
+                        <span><Icon name="droplet" size={14} /><strong>{zone.waterLitres.toLocaleString()} L</strong><small>water</small></span>
+                        <span><Icon name="clock" size={14} /><strong>{zone.irrigationEvents}</strong><small>events</small></span>
+                      </div>
+                      <div className="zone-final">Final moisture <strong>{zone.finalMoisturePct}%</strong></div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+
+              <section className="safety-strip">
+                <span className="safety-icon"><Icon name="shield" size={18} /></span>
+                <p><strong>Safety rules are active.</strong> The simulation applies a 6-hour valve lockout, a 90-minute daily cap per zone, and closes valves on invalid sensor readings.</p>
+              </section>
+            </>
+          ) : !loading ? (
+            <section className="empty-panel">
+              <span className="empty-icon"><Icon name="chart" size={24} /></span>
+              <h2>Your field report starts here</h2>
+              <p>Run a simulation to see predicted soil moisture, irrigation activity, and water use for each zone.</p>
+              <span className="empty-note"><Icon name="info" size={14} /> Uses synthetic weather and assumed soil properties.</span>
+            </section>
+          ) : null}
+
+          <footer className="page-footer">Simulation only <span>·</span> Soil constants are assumptions <span>·</span> Validate with real field data</footer>
         </div>
       </main>
     </div>
