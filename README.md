@@ -6,7 +6,7 @@ summaries to the browser.
 
 ## Run locally
 
-Requirements: Node.js 20.6+ and Python 3.11+.
+Requirements: Node.js 20.6+ and Python 3.11+ (including Python 3.14).
 
 From PowerShell:
 
