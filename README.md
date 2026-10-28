@@ -12,7 +12,9 @@ From PowerShell:
 
 ```powershell
 Set-Location "C:\path\to\pern-app"
-npm run install:all
+npm install
+npm install --prefix server
+npm install --prefix client
 python -m pip install -r server\requirements.txt
 npm run dev
 ```
@@ -37,5 +39,8 @@ The local simulation does not require Neon or a `DATABASE_URL`. Set
   field-validated agronomic advice.
 
 For deployment, install the Python packages in `server/requirements.txt` in the
-server environment and set `PYTHON_EXECUTABLE` if needed. The server serves the
-built React app from `client/dist`.
+server environment and set `PYTHON_EXECUTABLE` if needed. The `npm run build`
+command creates a project-local `.venv`, installs those dependencies, and builds
+the React app. On Render, set the Build Command to `npm run build` and the Start
+Command to `npm start`; the deployed Node service must use a Python-capable build
+environment. The server serves the built React app from `client/dist`.
